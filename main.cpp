@@ -1,165 +1,138 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
-#include <malloc.h>
 #include <stdlib.h>
-#include <locale.h>
+#include <math.h>
+#include <string.h>
 #include <windows.h>
 
-struct History { // композитный тип данных для реализации истории
-    int index[10000], j; // индексы замен в файле и размер массива
-    char prev, now;
-};
+int top = -1;
+char img_name[30], img_crypt_name[30], txt_name[30];
 
-struct Symb_info { // композитный тип данных для реализации частотного анализа
-    char symbol, change;
-    int count;
-};
-
-int global_size = 0, count_dif_symb = 0, history_top = 0;
-char spectrum[] = "оеаинтрслвкпмудяыьзбгйчюхжшцщфэъ", alphabet[] = "АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
-struct Symb_info symb[32];
-struct History list[35];
-
-int is_decode(char c) { // проверка на заглавные буквы
-    return ((c >= 'А') && (c <= 'Я'));
+void finish(const char warning[]) {
+    printf("%s", warning);
+    exit(0);
 }
 
-int is_letter(char c) { // проверка на буквы русского языка
-    return (((c >= 'А') && (c <= 'Я')) || ((c >= 'а') && (c <= 'я')));
+void move_input(FILE* f, int n) {
+    for (int i = 0; i < n; i++) fgetc(f);
 }
 
-int cmp(const void* a, const void* b) { // компаратор
-    const struct Symb_info* A = (const struct Symb_info*)a;
-    const struct Symb_info* B = (const struct Symb_info*)b;
-    if (A->count < B->count) return 1;
-    else if (A->count > B->count) return -1;
-    else return 0;
-}
-
-void analysis(struct Symb_info* symb, char* p) {
-    for (int i = 0; i < 32; i++) { // начальная инициализация структуры
-        symb[i].symbol = alphabet[i];
-        symb[i].count = 0;
+void dec_to_bin(unsigned char c, char* bin_text, int k) {
+    if (k <= 7) {
+        k++;
+        dec_to_bin(c / 2, bin_text, k);
     }
-    for (int i = 0; i < global_size; i++) // подсчет встречающихся букв
-        if (is_decode(p[i])) symb[p[i] - 'А'].count++;
-    qsort(symb, 32, sizeof(struct Symb_info), cmp); // сортировка по полю count
-    for (int i = 0; i < 32 && symb[i].count != 0; ++i) count_dif_symb = i + 1; // кол-во различных чисел в файле
-    for (int i = 0; i < count_dif_symb; ++i) symb[i].change = spectrum[i]; // соответвие букв в соответствии с частотным анализом
+    bin_text[++top] = c % 2;
 }
 
-void auto_decode(struct Symb_info* symb, char* p) { // автоматическая расшифровка
-    for (int i = 0; i < global_size; i++)
-        for (int j = 0; j < count_dif_symb; ++j)
-            if (symb[j].symbol == p[i]) p[i] = symb[j].change;
+int file_size(FILE* f) {
+    if (fseek(f, 0L, SEEK_END)) finish("fseek error");
+    int sz = ftell(f);
+    rewind(f);
+    return sz;
 }
 
-void analysis_print(struct Symb_info* symb) { // вывод анализа
-    for (int i = 0; i < count_dif_symb; ++i)
-        printf("%lf: %c -> %c\n", symb[i].count * 1.0 / (global_size - 1), symb[i].symbol, symb[i].change);
-}
-
-void selection_size_n(char* p, char check) { // check: 'a' = all, 'd' = decode
-    int cnt=0, n, move=0, j; //move: при подсчете нерасшифрованных символов отвечает за кол-во маленьких букв
-    printf("Необходимое кол-во символов: ");
-    scanf("%d", &n);
-    for (int i = 0; i < global_size; i++) {
-        if (check == 'd' && is_letter(p[i]) && !is_decode(p[i])) {
-            move++; continue; // пропускаем маленькие буквы при подсчете нерасшифрованных
+void uncode() {
+    printf("Введите имя изображения:\n");
+    scanf("%s", img_name);
+    printf("Введите необходимое имя для изображения с \"секретным\" кодом:\n");
+    scanf("%s", img_crypt_name);
+    printf("Введите имя файла с текстом:\n");
+    scanf("%s", txt_name);
+    FILE* in_bmp = fopen(img_name, "rb");
+    FILE* out_bmp = fopen(img_crypt_name, "wb+");
+    FILE* in_txt = fopen(txt_name, "r");
+    if (in_bmp == NULL || out_bmp == NULL || in_txt == NULL) finish("Один из файлов не может быть открыт");
+    int  text_size = file_size(in_txt), level, k = 0, pointer = 0;;
+    char* bin_text, c;
+    if ((bin_text = (char*)malloc(8 * sizeof(char) * text_size + 70)) == NULL) finish("Не удалось выделить память");
+    printf("Введите уровень шифрования от 1 до 8: \n");
+    scanf("%d", &level);
+    for (int i = 0; i < 6; i++) {
+        c = fgetc(in_bmp);
+        fputc(c, out_bmp);
+    }
+    c = fgetc(in_bmp); //резерв уровень
+    fputc(level, out_bmp);
+    c = fgetc(in_bmp);// резерв размер 1
+    fputc(text_size / 256, out_bmp);
+    c = fgetc(in_bmp);// резерв размер 2
+    fputc(text_size % 256, out_bmp);
+    c = fgetc(in_bmp); // резерв тип
+    fputc(txt_name[strlen(txt_name) - 1], out_bmp);
+    for (int i = 0; i < 8; i++) {
+        c = fgetc(in_bmp);
+        fputc(c, out_bmp);
+    }
+    int* width, * height;
+    fread(&width, sizeof(int), 1, in_bmp);
+    fwrite(&width, sizeof(int), 1, out_bmp);
+    fread(&height, sizeof(int), 1, in_bmp);
+    fwrite(&height, sizeof(int), 1, out_bmp);
+    int marginal_sz = (int)width * (int)height * 3 + ((int)width % 4) * (int)height * level;
+    if (text_size * 8 > marginal_sz || text_size > 65535) {
+        printf("Максимальный размер текстового файла %d\nТекущий размер файла: %d\n", 65535 > marginal_sz / 8 ? marginal_sz / 8 : 65535, text_size);
+        free(bin_text);
+        finish("");
+    }
+    while (fscanf(in_txt, "%c", &c) != EOF) dec_to_bin(c, bin_text, 1);
+    while ((top+1) % level != 0) bin_text[++top] = 0;
+    while (fscanf(in_bmp, "%c", &c) != EOF) {
+        if (k++ >= 28 && pointer <= top) {
+            c >>= level;
+            for (int i = 0; i < level; i++) {
+                c <<= 1;
+                c += bin_text[pointer++];
+            }
         }
-        if (check == 'a' ? is_letter(p[i]) : is_decode(p[i])) cnt++;
-        else if ((cnt == n && move != 0) || (cnt == n && n != 0)) { // при достижении нужной длины выводим ответ с учетом 2 вариантов работы функции
-            for (j = i - cnt - move; j < i; j++) printf("%c", p[j]);
-            printf("\n"); cnt = 0; move = 0;
+
+        fputc(c, out_bmp);
+    }
+    free(bin_text);
+    printf("Успешно!");
+}
+
+void decode() {
+    printf("Введите имя стегоконтейнера:\n");
+    scanf("%s", img_name);
+    FILE* in_cont = fopen(img_name, "rb");
+    printf("Введите имя текстового файла для вывода:\n");
+    scanf("%s", txt_name);
+    FILE* out_crypt = fopen(txt_name, "wb+");
+    if (in_cont == NULL || out_crypt == NULL) finish("Один из файлов не может быть открыт");
+    int level, ln_crypt, point = 0, k = 0;
+    move_input(in_cont, 6);
+    level = fgetc(in_cont);
+    ln_crypt = fgetc(in_cont) * 256 + fgetc(in_cont);
+    char type = fgetc(in_cont), bin[8] = { 0 };
+    move_input(in_cont, 44);
+    while (1) {
+        char c = fgetc(in_cont);
+        for (int i = 0; i < level; i++) {
+            bin[k++] = (c >> (level - i - 1)) & 1;
+            if (k == 8) {
+                int symb = 0;
+                for (int q = 0; q < 8; q++) symb += bin[q] * (1 << (7 - q));
+                if (symb == 10) {
+                    fputc(13, out_crypt);
+                    point++;
+                }
+                fputc(symb, out_crypt);
+                k = symb = 0;
+                point++;
+                memset(bin, 0, 8);
+            }
+            if (point == ln_crypt) finish("Успешно!");
         }
-        else {
-            cnt = 0; move = 0;
-        }
     }
-}
-
-void crypto_print(char* p) { // вывод криптограммы
-    for (int i = 0; i < global_size; i++) printf("%c", p[i]);
-    printf("\n");
-}
-
-void replace_letters(char a, char b, char* p, struct History *list) {
-    if (!is_decode(a) || is_decode(b) || !is_letter(b) || !is_letter(a)) {
-        printf("Ошибка! Введите 1 символ заглавным, а 2 строчным вводами\nПример:Ы и\n");
-        return;
-    }
-    int j = 0;
-    for (int i = 0; i < global_size; i++){
-        if (a == p[i] && is_decode(p[i])) { // меняем нерасшифрованные символы и заносим изменения в историю
-            list[history_top].prev = a;
-            list[history_top].now = p[i] = b;
-            list[history_top].index[j++] = i;
-        }
-    }
-    list[history_top++].j = j; // обновляем размер массива отвечающего за производимые изменения на данном шаге
-}
-
-void hitory_list(struct History* list) { // вывод истории
-    for (int i = 0; i < history_top; i++) printf("%c -> %c\n", list[i].prev, list[i].now);
-}
-
-void undo(char* p, struct History* list) { // откат
-    if (history_top == 0) {
-        printf("Ошибка! История пуста\n");
-        return;
-    }
-    for (int i = 0; i < list[history_top-1].j; i++) p[list[history_top-1].index[i]] = list[history_top-1].prev;
-    list[history_top--].j = 0;
-}
-
-int user_communication() { // интерфейс взаимодействия с пользвателем
-    int n;
-    printf("Выберите:\n1) Анализ\n2) Авторасшифровка\n3) Слова по кол-ву букв\n4) Слова по кол-ву нерасшифрованных букв\n");
-    printf("5) Отображение криптограммы\n6) Замена букв\n7) История\n8) Отмена последней замены\n9) Выход\n");
-    scanf("%d", &n);
-    return n;
 }
 
 int main() {
-    SetConsoleCP(1251); // установка win-cp 1251 в поток ввода
-    SetConsoleOutputCP(1251); // установка win-cp 1251 в поток вывода
-    setlocale(LC_ALL, "Russian"); // задаем локаль используемую программой
-    FILE* f = fopen("lab_var_5.txt", "r");
-    if (f == NULL) {
-        printf("Ошибка! Такого файла нет в директории");
-        return 0;
-    }
-    char *p, c;
-    p = (char*)malloc(sizeof(char)); // выделяем блок памяти для массива символов
-    while (fscanf(f, "%c", &c) != EOF) { // считываем символы с файла занося в массив
-        p[global_size++] = c;
-        p = (char*)realloc(p, sizeof(char) * (global_size + 5));
-    }
-    if (global_size == 0) {
-        printf("Ошибка! Файл пуст");
-        return 0;
-    }
-    p[global_size++] = '\0';
-    analysis(symb, p); // предварительные инициализации и анализ файла
-    int step = user_communication();
-    while (step != 9) { // интерфейс взаимодействия
-        if (step == 1) analysis_print(symb);
-        if (step == 2) auto_decode(symb, p);
-        if (step == 3) selection_size_n(p, 'a');
-        if (step == 4) selection_size_n(p, 'd');
-        if (step == 5) crypto_print(p);
-        if (step == 6) {
-            char a[10], b[10];
-            printf("Введите две буквы через пробел:"); scanf("%s %s", a, b);
-            replace_letters(a[0], b[0], p, list);
-        }
-        if (step == 7) hitory_list(list);
-        if (step == 8) undo(p, list);
-        if (step == 9) {
-            free(p); return 0;
-        }
-        step = user_communication();
-    }
-    free(p); // освобождение памяти
-    return 0;
+    SetConsoleOutputCP(1251);
+    int n;
+    printf("1. Закодировать\n2. Декодировать\n");
+    scanf("%d", &n);
+    if (n == 1) uncode();
+    else if (n == 2) decode();
+    else finish("Введите допутимое значение: 1/2");
 }
